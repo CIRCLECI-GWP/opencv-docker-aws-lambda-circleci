@@ -1,0 +1,23 @@
+service: opencv-grayscale-lambda
+
+frameworkVersion: "4"
+
+provider:
+  name: aws
+  region: us-west-2
+  runtime: python3.9
+  iam:
+    role:
+      statements:
+        - Effect: "Allow"
+          Action:
+            - "s3:*"
+          Resource: ["arn:aws:s3:::${param:bucket_name}", "arn:aws:s3:::${param:bucket_name}/*"]
+
+functions:
+  OpenCVGrayscaleLambdaV2:
+    image: ${param:account_id}.dkr.ecr.${param:region}.amazonaws.com/${param:repo_name}@${param:image_sha}
+    timeout: 60
+    memorySize: 1024
+    environment:
+      S3_BUCKET_NAME: ${param:bucket_name}

@@ -1,0 +1,53 @@
+version: 2.1
+
+orbs:
+  aws-ecr: circleci/aws-ecr@9.0.4
+  aws-cli: circleci/aws-cli@4.1.3
+  serverless: circleci/serverless-framework@2.0.1
+
+jobs:
+  build_and_push_to_ecr:
+    machine:
+      image: ubuntu-2204:current
+    steps:
+      - checkout
+      - aws-ecr/build_and_push_image:
+          auth:
+            - aws-cli/setup:
+                aws_access_key_id: "${AWS_ACCESS_KEY_ID}"
+                aws_secret_access_key: "${AWS_SECRET_ACCESS_KEY}"
+                region: "${AWS_DEFAULT_REGION}"
+          create_repo: false
+          dockerfile: Dockerfile
+          platform: linux/amd64
+          push_image: false
+          region: "${AWS_DEFAULT_REGION}"
+          repo: "${AWS_ECR_REPO_NAME}"
+          tag: "${CIRCLE_SHA1}"
+          workspace_root: .
+      - aws-ecr/push_image:
+          region: "${AWS_DEFAULT_REGION}"
+          repo: "${AWS_ECR_REPO_NAME}"
+          tag: "${CIRCLE_SHA1}"
+  deploy_using_serverless:
+    executor: serverless/default
+    steps:
+      - checkout
+      - aws-cli/setup
+      - serverless/setup
+      - run:
+          name: Get ECR Image Tag and Deploy Lambda
+          command: |
+            IMAGE_DIGEST=$(aws ecr describe-images --repository-name ${AWS_ECR_REPO_NAME} --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageDigest')
+
+            IMAGE_DIGEST=$(echo $IMAGE_DIGEST | sed -e 's/^"//' -e 's/"$//')
+
+            serverless deploy --param="bucket_name=${BUCKET_NAME}" --param="account_id=${AWS_ACCOUNT_ID}" --param="region=${AWS_DEFAULT_REGION}" --param="repo_name=${AWS_ECR_REPO_NAME}" --param="image_sha=${IMAGE_DIGEST}"
+
+workflows:
+  deploy_lambda:
+    jobs:
+      - build_and_push_to_ecr
+      - deploy_using_serverless:
+          requires:
+            - build_and_push_to_ecr
